@@ -1,0 +1,2 @@
+requests==2.20.1
+shodan==1.12.1
