@@ -50,7 +50,7 @@ def process_ip(ip, port, queue):
     # Exceptions
     except KeyboardInterrupt:
         queue.put("F")
-        print("Process interrupted.")
+        print("Process interrupted.", file=sys.stderr)
         sys.exit(0)
     except Exception:
         queue.put("F")
@@ -60,31 +60,47 @@ if __name__ == "__main__":
         # Arguments
         parser = argparse.ArgumentParser(description=banner, formatter_class=argparse.RawDescriptionHelpFormatter)
         parser.add_argument('key', help="Your Shodan API key")
-        parser.add_argument('-o', metavar="options", help="Your Shodan query options (example: \"city:\\\"Chicago\\\"\")")
-        parser.add_argument('-c', metavar="count", help="Amount of threads to use for mapping", type=int, default=10)
+        parser.add_argument('-q', metavar="options", help="Your Shodan query options (example: \"city:\\\"Chicago\\\"\")")
+        parser.add_argument('-c', metavar="count", help="Amount of threads to use for mapping (default: 10)", type=int, default=10)
+        parser.add_argument('-o', metavar="file", type=str, help="Output vulnerable IPs to file")
+        parser.add_argument('--out-failed', metavar="file", type=str, help="Output IPs that failed to login to file")
+        parser.add_argument('--silent', action="store_true", help="Silence all stdout output")
+        parser.add_argument('--iponly', action="store_true", help="Output only vulnerable IPs to stdout")
         parser.add_argument('--about', help="About NWAM", action="store_true")
         args = parser.parse_args()
+        if args.silent and args.iponly:
+            print("--silent and --iponly are incompatible", file=sys.stderr)
+            quit()
         
         if args.about:
             print(banner)
             print(about)
             quit()
 
+        # Output files
+        if args.o:
+            outfile = open(args.o, "a")
+        if args.out_failed:
+            outfailedfile = open(args.out_failed, "a")
+
         # NWAM Banner
-        print(banner+bannertext+"\n\n")
+        if args.silent == False and args.iponly == False:
+            print(banner+bannertext+"\n\n")
 
         # Connect to Shodan and setup the query string
         api = shodan.Shodan(args.key)
         searchstr = "Netwave"
-        if args.o:
-            searchstr += (" "+args.o)
-            print("Searching with options: "+args.o)
+        if args.q:
+            searchstr += (" "+args.q)
+            if args.silent == False and args.iponly == False:
+                print("Searching with options: "+args.o)
         
         # Main loop
         curpage = 1
         while True:
             results = api.search(searchstr, page=curpage)
-            if curpage == 1: print("Shodan returned {} results!\n".format(results["total"]))
+            if curpage == 1 and args.silent == False and args.iponly == False:
+                print("Shodan returned {} results!\n".format(results["total"]))
             
             # Tone down the threads if not enough results
             if args.c > int(results["total"]):
@@ -98,10 +114,10 @@ if __name__ == "__main__":
             vulnerable = 0
 
             # Check if finished
-            if len(results['matches']) == 0:
+            if len(results['matches']) == 0 and args.silent == False and args.iponly == False:
                 print("Mapping done! Quitting...")
                 quit()
-            else:
+            elif args.silent == False and args.iponly == False:
                 print("Processing page {}...".format(curpage))
             
             # Loop through IPs
@@ -115,8 +131,12 @@ if __name__ == "__main__":
                     # Wait for a process to return
                     res = q.get(timeout=6)
                     if res[0] != "F":
-                        print("[VULN] "+res)
+                        if args.iponly and args.silent == False: print(res)
+                        elif args.silent == False: print("[VULN] "+res)
+                        if args.o: outfile.write(res+"\n")
                         vulnerable += 1
+                    elif args.out_failed and res != "F":
+                        outfailedfile.write(res.split(" ")[1]+"\n")
                     processed += 1
                     # Then spawn the new process
                     p = Process(target=process_ip, args=(result["ip_str"], str(result["port"]), q,))
@@ -126,19 +146,24 @@ if __name__ == "__main__":
             while runningcount > 0:
                 res = q.get(timeout=6)
                 if res[0] != "F":
-                    print("[VULN] "+res)
+                    if args.iponly and args.silent == False: print(res)
+                    elif args.silent == False: print("[VULN] "+res)
+                    if args.o: outfile.write(res+"\n")
                     vulnerable += 1
+                elif args.out_failed and res != "F":
+                    outfailedfile.write(res.split(" ")[1]+"\n")
                 processed += 1
                 runningcount -= 1  
 
-            print("Processed {} cameras, {} vulnerable.\n".format(processed, vulnerable))
+            if args.silent == False and args.iponly == False:
+                print("Processed {} cameras, {} vulnerable.\n".format(processed, vulnerable))
             curpage += 1
 
     # Exceptions
     except shodan.APIError as e:
         print(e)
     except KeyboardInterrupt:
-        print("SIGINT! Interrupting mapper...")
+        print("SIGINT! Interrupting mapper...", file=sys.stderr)
         sys.exit(0)
     except Exception as e:
         print(sys.exc_info()[0].__name__)
