@@ -116,8 +116,11 @@ if __name__ == "__main__":
                     res = q.get(timeout=6)
                     if res[0] != "F":
                         print("[VULN] "+res)
+                        vulnerable += 1
                     processed += 1
-                    runningcount -= 1 
+                    # Then spawn the new process
+                    p = Process(target=process_ip, args=(result["ip_str"], str(result["port"]), q,))
+                    p.start()
 
             # Wait for the remaining processes to return
             while runningcount > 0:
