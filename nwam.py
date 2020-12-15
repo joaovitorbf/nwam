@@ -93,7 +93,7 @@ if __name__ == "__main__":
         if args.q:
             searchstr += (" "+args.q)
             if args.silent == False and args.iponly == False:
-                print("Searching with options: "+args.o)
+                print("Searching with options: "+args.q)
         
         # Main loop
         curpage = 1
